@@ -22,8 +22,8 @@
 ### 1.3 참조 문서
 
 - [기술 명세서](./tech_spec.md)
-- [API 명세서](./api_spec.md)
-- [데이터 모델](./data_model.md)
+- [API 명세서](./02_api-spec/api_spec.md)
+- [데이터 모델](./03_db/data_model.md)
 
 ---
 

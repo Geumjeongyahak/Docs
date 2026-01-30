@@ -380,9 +380,9 @@ GOOGLE_CLIENT_SECRET=xxx
 
 ## 9. 개발 컨벤션
 
-> 상세 컨벤션은 [convention 폴더](./convention/)를 참조하세요.
+> 상세 컨벤션은 [convention 폴더](./07_convention/)를 참조하세요.
 
-- [커밋/브랜치/코드 스타일](./convention/convention.md)
-- [PR 템플릿](./convention/pr_template.md)
-- [Issue 템플릿 - Feature](./convention/issue_feature_template.md)
-- [Issue 템플릿 - Bug](./convention/issue_bug_template.md)
+- [커밋/브랜치/코드 스타일](./07_convention/convention.md)
+- [PR 템플릿](./07_convention/pr_template.md)
+- [Issue 템플릿 - Feature](./07_convention/issue_feature_template.md)
+- [Issue 템플릿 - Bug](./07_convention/issue_bug_template.md)

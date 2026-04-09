@@ -13,9 +13,9 @@
 - 데이터 유형 및 제약조건 명시
 
 ### 1.3 참조 문서
-- [PRD (Product Requirements Document)](./prd.md)
-- [API 명세서](./api_spec.md)
-- [기술 명세서](./tech_spec.md)
+- [PRD (Product Requirements Document)](../prd.md)
+- [API 명세서](../02_api-spec/api_spec.md)
+- [기술 명세서](../tech_spec.md)
 
 ## 2. 데이터 모델 아키텍처
 
@@ -25,7 +25,8 @@
 
 | 부모 엔티티 | 자식 엔티티 | FK 필드 | 설명 |
 |-------------|-------------|---------|------|
-| Departments | Permissions | department_id | 부서별 권한 |
+| Users | User Roles | user_id | 사용자별 역할 |
+| Departments | User Departments | department_id | 부서별 소속 사용자 |
 | Classrooms | Subjects | class_id | 분반별 과목 |
 | Subjects | Lessons | subject_id | 과목별 수업 |
 | Users | Subjects | teacher_id | 봉사자가 담당하는 과목 |
@@ -45,7 +46,7 @@
 
 | 엔티티 A | 엔티티 B | 조인 테이블 | 설명 |
 |----------|----------|-------------|------|
-| Users | Permissions | user_permissions | 사용자별 권한 부여 |
+| Users | Roles | user_roles | 사용자별 역할 부여 |
 | Users | Departments | user_departments | 사용자별 담당 부서 |
 | Students | Lessons | student_enrollments | 학생 수업 등록 |
 
@@ -53,12 +54,11 @@
 
 ```mermaid
 erDiagram
-    %% 사용자 및 권한 관리
-    users ||--o{ user_permissions : "has"
+    %% 사용자 및 역할 관리
+    users ||--o{ user_roles : "has"
+    roles ||--o{ user_roles : "assigned to"
     users ||--o{ user_departments : "belongs to"
-    permissions ||--o{ user_permissions : "granted to"
     departments ||--o{ user_departments : "has members"
-    departments ||--o{ permissions : "has"
 
     %% 분반 및 과목
     classrooms ||--o{ subjects : "contains"
@@ -87,20 +87,37 @@ erDiagram
     %% 엔티티 정의
     users {
         bigint id PK
+        varchar username UK
         varchar name
         varchar email UK
+        varchar gmail UK
         varchar password_hash
-        varchar role
+        varchar phone_number
+        varchar client_id
+    }
+
+    roles {
+        bigint id PK
+        varchar name UK
+        text description
+    }
+
+    user_roles {
+        bigint id PK
+        bigint user_id FK
+        bigint role_id FK
     }
 
     departments {
         bigint id PK
         varchar name
+        bigint role_id FK
+        text description
     }
 
-    permissions {
+    user_departments {
         bigint id PK
-        varchar name
+        bigint user_id FK
         bigint department_id FK
     }
 
@@ -199,43 +216,79 @@ erDiagram
 | 필드명 | 데이터 타입 | 제약조건 | 설명 |
 |--------|-------------|----------|------|
 | id | BIGINT | PRIMARY KEY, AUTO_INCREMENT | 사용자 고유 ID |
+| username | VARCHAR(50) | UNIQUE, NOT NULL | 사용자 아이디 (로그인용) |
 | name | VARCHAR(50) | NOT NULL | 사용자 실명 |
-| email | VARCHAR(255) | UNIQUE, NOT NULL | 이메일 주소 |
-| password_hash | VARCHAR(255) | NOT NULL | 암호화된 비밀번호 |
+| email | VARCHAR(100) | UNIQUE, NULL | 이메일 주소 |
+| gmail | VARCHAR(100) | UNIQUE, NULL | Gmail 주소 (OAuth) |
+| password_hash | VARCHAR(512) | NULL | 암호화된 비밀번호 |
 | phone_number | VARCHAR(20) | NULL | 전화번호 |
-| profile_image_url | VARCHAR(500) | NULL | 프로필 이미지 URL |
-| role | VARCHAR(20) | NOT NULL, DEFAULT 'VOLUNTEER' | 역할 (VOLUNTEER, ADMIN) |
-| description | TEXT | NULL | 추가 정보 |
+| client_id | VARCHAR(512) | NULL | OAuth Client ID |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 생성일시 |
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
 
-### 3.2 부서 (departments)
+### 3.2 역할 (Roles)
 
-사용자의 권한을 관리하는 엔티티입니다. 관리자가 할당된 부서를 관리합니다.
+사용자의 역할을 정의하는 엔티티입니다. RoleType Enum으로 관리되며, 각 역할은 고유 ID를 가집니다.
+
+**역할 계층 구조:**
+- **기본 역할 (level 1-4)**: ADMIN(1), MANAGER(2), VOLUNTEER(3), GUEST(4) → `ROLE_` prefix 사용
+- **부서 역할 (level 1001-1999)**: DEPT_FINANCE(1001), DEPT_ACADEMIC(1002), DEPT_IT(1003), DEPT_SUPPORT(1004) → prefix 없음
+- **교육 역할 (level 2001-)**: TEACHER(2001) → prefix 없음
+
+| 필드명 | 데이터 타입 | 제약조건 | 설명 |
+|--------|-------------|----------|------|
+| id | BIGINT | PRIMARY KEY | 역할 고유 ID (RoleType Enum에서 정의) |
+| name | VARCHAR(50) | UNIQUE, NOT NULL | 역할 이름 (RoleType) |
+| description | TEXT | NULL | 역할 설명 |
+
+### 3.3 사용자 역할 조인 테이블 (user_roles)
+
+사용자와 역할의 다대다 관계를 관리하는 조인 테이블입니다. 한 사용자는 여러 역할을 가질 수 있습니다.
+
+| 필드명 | 데이터 타입 | 제약조건 | 설명 |
+|--------|-------------|----------|------|
+| id | BIGINT | PRIMARY KEY, AUTO_INCREMENT | 엔티티 고유 ID |
+| user_id | BIGINT | FOREIGN KEY, NOT NULL | 사용자 ID |
+| role_id | BIGINT | FOREIGN KEY, NOT NULL | 역할 ID (RoleType Enum ID) |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 생성일시 |
+| updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
+
+**제약조건:**
+- UNIQUE (user_id, role_id): 동일한 사용자에게 동일한 역할이 중복 부여되지 않음
+
+**Spring Security 권한 매핑:**
+- 기본 역할 (ADMIN, MANAGER, VOLUNTEER, GUEST): `ROLE_` prefix 추가 (예: ROLE_ADMIN)
+- 부서/교육 역할 (DEPT_*, TEACHER): prefix 없음 (예: DEPT_FINANCE, TEACHER)
+
+### 3.4 부서 (departments)
+
+조직 내 부서를 관리하는 엔티티입니다. 각 부서는 하나의 역할(RoleType)을 가질 수 있으며, 사용자가 부서에 참여/탈퇴할 때 해당 역할이 자동으로 부여/제거됩니다.
 
 | 필드명 | 데이터 타입 | 제약조건 | 설명 |
 |--------|-------------|----------|------|
 | id | BIGINT | PRIMARY KEY, AUTO_INCREMENT | 엔티티 고유 ID |
 | name | VARCHAR(50) | NOT NULL | 부서 이름 |
 | description | TEXT | NULL | 추가 정보 |
+| role_id | BIGINT | FOREIGN KEY, NULL | 부서에 할당된 역할 ID |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 생성일시 |
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
 
-### 3.3 권한 (Permissions)
+### 3.5 사용자-부서 조인 테이블 (user_departments)
 
-사용자의 권한을 관리하는 엔티티입니다. 부서와도 연관관계를 가지며, 특정 부서에서 수행할 수 있는 권한을 관리합니다. 각 도메인 별 수정 관한을 정의할 생각입니다.
-예) SUPER_ADMIN, MANAGE_USERS, MANAGE_DEPARTMENTS, MANAGE_CLASSROOMS ... 
+사용자와 부서의 다대다 관계를 관리하는 조인 테이블입니다.
 
 | 필드명 | 데이터 타입 | 제약조건 | 설명 |
 |--------|-------------|----------|------|
-| id | BIGINT | PRIMARY KEY | 엔티티 고유 ID(관리자가 직접 관리합니다.) |
-| name | VARCHAR(50) | NOT NULL | 권한 이름 |
-| description | TEXT | NULL | 추가 정보 |
-| department_id | BIGINT | NULL | 부서 ID(부서가 가진 권한 표현 가능) |
+| id | BIGINT | PRIMARY KEY, AUTO_INCREMENT | 엔티티 고유 ID |
+| user_id | BIGINT | FOREIGN KEY, NOT NULL | 사용자 ID |
+| department_id | BIGINT | FOREIGN KEY, NOT NULL | 부서 ID |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 생성일시 |
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
 
-### 3.4 분반(classrooms)
+**제약조건:**
+- UNIQUE (user_id, department_id): 동일한 사용자가 동일한 부서에 중복 참여 불가
+
+### 3.6 분반(classrooms)
 
 분반을 관리하는 엔티티입니다. 관리자가 추가 및 수정을 관리합니다.
 
@@ -248,7 +301,7 @@ erDiagram
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 생성일시 |
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
 
-### 3.5 학생 (students)
+### 3.7 학생 (students)
 
 학생을 관리하는 엔티티입니다. 현재로서는 관리자가 추가 및 등록을 관리합니다.
 
@@ -262,7 +315,7 @@ erDiagram
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
 
 
-### 3.6 과목(subjects)
+### 3.8 과목(subjects)
 
 학생이 수업할 과목입니다. 학생과 봉사에 대한 협의 후 관리자가 추가 및 수정을 관리합니다.
 
@@ -284,10 +337,10 @@ erDiagram
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
 
 
-### 3.7 수업 (lessons)
+### 3.9 수업 (lessons)
 
-수업을 관리하는 엔티티입니다. 봉사자가 관리자와 협의하여 수업을 생성할 때, 시작일, 요일, 횟수, 시간 등을 기반으로 자동 생성됩니다. 수업이 생성된 후에는 수업에 등록된 학생들에게 자동으로 수업 출석을 생성합니다. 
-이 수업은 캘린더 뷰 형태로 일별 / 월별로 조회할 수 있습니다. 
+수업을 관리하는 엔티티입니다. 봉사자가 관리자와 협의하여 수업을 생성할 때, 시작일, 요일, 횟수, 시간 등을 기반으로 자동 생성됩니다. 수업이 생성된 후에는 수업에 등록된 학생들에게 자동으로 수업 출석을 생성합니다.
+이 수업은 캘린더 뷰 형태로 일별 / 월별로 조회할 수 있습니다.
 
 | 필드명 | 데이터 타입 | 제약조건 | 설명 |
 |--------|-------------|----------|------|
@@ -301,7 +354,7 @@ erDiagram
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 생성일시 |
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
 
-### 3.8 학생 등록 (student_enrollments)
+### 3.10 학생 등록 (student_enrollments)
 
 학생이 수업에 등록하는 엔티티입니다. 수업이 생성된 뒤 학생은 원하는 수업을 등록할 수 있습니다.
 
@@ -314,7 +367,7 @@ erDiagram
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
 
 
-### 3.9 학생 출석 (student_attendances)
+### 3.11 학생 출석 (student_attendances)
 
 학생의 출석을 관리하는 엔티티입니다. 수업이 생성된 뒤 등록된 학생에 대해 자동 생성되어 출석을 관리합니다.
 
@@ -328,7 +381,7 @@ erDiagram
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
 
 
-### 3.10 수업 일지 (lesson_reviews) 
+### 3.12 수업 일지 (lesson_reviews)
 
 수업 일지를 관리하는 엔티티입니다. 봉사자가 매 수업이 끝난 뒤 특이사항등을 기재한 수업 일지를 작성합니다.
 
@@ -341,7 +394,7 @@ erDiagram
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
 
 
-### 3.11 결석 요청 (absence_requests)
+### 3.13 결석 요청 (absence_requests)
 
 교사(봉사자)는 수업에 부득이하게 결석할 때 이를 요청하기 위해 사용하는 엔티티입니다.
 
@@ -358,7 +411,7 @@ erDiagram
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 생성일시 |
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
 
-### 3.12 수업 교환 요청 (lesson_exchange_requests)
+### 3.14 수업 교환 요청 (lesson_exchange_requests)
 
 교사(봉사자)는 수업을 교환할 때 이를 요청하기 위해 사용하는 엔티티입니다.
 
@@ -376,9 +429,9 @@ erDiagram
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 생성일시 |
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
 
-### 3.13 과목 교환 요청 (subject_exchange_requests)
+### 3.15 과목 교환 요청 (subject_exchange_requests)
 
-교사(봉사자)가 과목을 교환할 때 이를 요청하기 위해 사용하는 엔티티입니다. 과목 교환 시에는 
+교사(봉사자)가 과목을 교환할 때 이를 요청하기 위해 사용하는 엔티티입니다. 과목 교환 시에는
 해당 일자 이후의 수업이 모두 교환되어야 합니다.
 
 | 필드명 | 데이터 타입 | 제약조건 | 설명 |
@@ -395,9 +448,9 @@ erDiagram
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 생성일시 |
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
 
-### 3.14 기자재 구입 요청 (purchase_requests)
+### 3.16 기자재 구입 요청 (purchase_requests)
 
-봉사자 혹은 관리자가 수업에 필요한 기자재를 구입하기 위해 사용하는 엔티티입니다. 
+봉사자 혹은 관리자가 수업에 필요한 기자재를 구입하기 위해 사용하는 엔티티입니다.
 
 | 필드명 | 데이터 타입 | 제약조건 | 설명 |
 |--------|-------------|----------|------|
@@ -414,9 +467,9 @@ erDiagram
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 생성일시 |
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
 
-### 3.15 기자재 영수증 (purchase_receipts)
+### 3.17 기자재 영수증 (purchase_receipts)
 
-봉사자 혹은 관리자가 수업에 필요한 기자재를 구입한 후 이를 영수증으로 기록하기 위해 사용하는 엔티티입니다. 물품 구입 후 영수증을 이미지로 첨부하여 기록합니다. 이는 s3에 저장됩니다.
+봉사자 혹은 관리자가 수업에 필요한 기자재를 구입한 후 이를 영수증으로 기록하기 위해 사용하는 엔티티입니다. 물품 구입 후 영수증을 이미지로 첨부하여 기록합니다.
 
 | 필드명 | 데이터 타입 | 제약조건 | 설명 |
 |--------|-------------|----------|------|

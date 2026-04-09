@@ -9,8 +9,8 @@
 ### 1.2 참조 문서
 
 - [PRD (Product Requirements Document)](./prd.md)
-- [API 명세서](./api_spec.md)
-- [데이터 모델](./data_model.md)
+- [API 명세서](./02_api-spec/api_spec.md)
+- [데이터 모델](./03_db/data_model.md)
 
 ---
 
@@ -30,7 +30,8 @@
 | 구분 | 기술 | 용도 |
 |------|------|------|
 | Authentication | Spring Security | 인증/인가 |
-| OAuth2 | Spring OAuth2 Client | 소셜 로그인 (Google) |
+| JWT | JJWT | Access/Refresh Token 관리 |
+| Password | BCrypt | 비밀번호 암호화 |
 
 ### 2.3 Database
 
@@ -86,64 +87,111 @@
 ### 3.3 패키지 구조
 
 ```
-src/main/java/org/geumjeong/learning/
-├── global/                          # 전역 설정 및 공통 모듈
+src/main/java/sonmoeum/
+├── common/                          # 공통 모듈
+│   ├── advice/                      # 전역 예외 처리
+│   │   └── GlobalExceptionHandler.java
 │   ├── config/                      # 설정 클래스
-│   │   ├── SecurityConfig.java
-│   │   ├── JpaConfig.java
 │   │   └── SwaggerConfig.java
-│   ├── common/                      # 공통 클래스
-│   │   ├── BaseEntity.java          # created_at, updated_at
-│   │   └── ApiResponse.java         # 통일된 응답 형식
-│   ├── exception/                   # 전역 예외 처리
-│   │   ├── GlobalExceptionHandler.java
-│   │   ├── ErrorCode.java
-│   │   └── BusinessException.java
-│   └── event/                       # 이벤트 공통
-│       └── DomainEvent.java
+│   ├── event/                       # 이벤트 정의
+│   ├── exception/                   # 공통 예외
+│   ├── security/                    # Security 관련
+│   │   ├── config/
+│   │   │   ├── SecurityProperties.java
+│   │   │   └── WebSecurityConfig.java
+│   │   ├── filter/                  # Security Filter
+│   │   │   └── JwtAuthenticationFilter.java
+│   │   ├── handler/                 # Success/Failure Handler
+│   │   ├── jwt/                     # JWT 토큰 처리
+│   │   │   └── JwtTokenProvider.java
+│   │   └── service/                 # UserDetails
+│   │       └── CustomUserDetails.java
+│   └── validation/                  # 커스텀 Validation
+│       ├── annotation/              # @ValidEmail 등
+│       └── validator/               # Validator 구현체
 │
-├── domain/                          # 도메인 모듈
-│   ├── user/                        # 사용자 도메인
-│   │   ├── controller/
-│   │   ├── service/
-│   │   ├── entity/
-│   │   ├── repository/
-│   │   ├── dto/
-│   │   └── event/
-│   │
-│   ├── department/                  # 부서 도메인
-│   │   └── ...
-│   │
-│   ├── permission/                  # 권한 도메인
-│   │   └── ...
-│   │
-│   ├── classroom/                   # 분반 도메인
-│   │   └── ...
-│   │
-│   ├── student/                     # 학생 도메인
-│   │   └── ...
-│   │
-│   ├── subject/                     # 과목 도메인
-│   │   └── ...
-│   │
-│   ├── lesson/                      # 수업 도메인
-│   │   ├── controller/
-│   │   ├── service/
-│   │   ├── entity/
-│   │   │   ├── Lesson.java
-│   │   │   ├── LessonReview.java
-│   │   │   └── StudentAttendance.java
-│   │   ├── repository/
-│   │   ├── dto/
-│   │   └── event/
-│   │       └── LessonCreatedEvent.java
-│   │
-│   └── request/                     # 요청 도메인
-│       ├── absence/                 # 결석 요청
-│       ├── exchange/                # 교환 요청 (수업/과목)
-│       └── purchase/                # 구입 요청
-│
-└── SonmoumApiApplication.java
+└── domain/                          # 도메인 레이어
+    ├── base/                        # 공통 Base 클래스
+    │   ├── dto/                     # BasePageRequest, BasePageResponse
+    │   └── entity/
+    │       └── BaseEntity.java      # created_at, updated_at
+    │
+    ├── auth/                        # 인증/권한 도메인
+    │   ├── entity/
+    │   │   ├── Role.java
+    │   │   └── RefreshToken.java
+    │   ├── enums/
+    │   │   └── RoleType.java        # ADMIN, MANAGER, VOLUNTEER 등
+    │   ├── repository/
+    │   │   └── RefreshTokenRepository.java
+    │   ├── service/
+    │   │   ├── LocalLoginService.java
+    │   │   ├── PasswordService.java
+    │   │   ├── DuplicateCheckService.java
+    │   │   ├── AuthService.java
+    │   │   └── RefreshTokenService.java
+    │   └── v1/                      # API v1
+    │       ├── controller/
+    │       │   ├── AuthController.java
+    │       │   ├── PasswordController.java
+    │       │   ├── DuplicateCheckController.java
+    │       │   └── MeController.java
+    │       └── dto/
+    │           ├── request/         # LocalLoginRequest, LocalSignupRequest 등
+    │           └── response/        # LoginResponse, TokenResponse 등
+    │
+    ├── users/                       # 사용자 도메인
+    │   ├── entity/
+    │   │   ├── User.java
+    │   │   └── UserRole.java
+    │   ├── exception/
+    │   │   ├── UserNotFoundException.java
+    │   │   └── DuplicateUsernameException.java
+    │   ├── repository/
+    │   │   ├── UserRepository.java
+    │   │   └── UserRoleRepository.java
+    │   ├── service/
+    │   │   ├── UserAdminService.java
+    │   │   ├── UserRoleService.java
+    │   │   └── UserProxyService.java
+    │   └── v1/                      # API v1
+    │       ├── controller/
+    │       │   ├── UserController.java
+    │       │   └── UserRoleController.java
+    │       └── dto/
+    │           ├── request/         # CreateUserRequest, UpdateUserRequest 등
+    │           └── response/        # UserResponse
+    │
+    ├── department/                  # 부서 도메인
+    │   ├── entity/
+    │   ├── repository/
+    │   └── v1/
+    │
+    ├── classroom/                   # 분반 도메인
+    │   ├── entity/
+    │   ├── repository/
+    │   └── v1/
+    │
+    ├── student/                     # 학생 도메인
+    │   ├── entity/
+    │   ├── repository/
+    │   └── v1/
+    │
+    ├── subject/                     # 과목 도메인
+    │   ├── entity/
+    │   ├── repository/
+    │   ├── event/                   # SubjectCreatedEvent
+    │   └── v1/
+    │
+    ├── lesson/                      # 수업 도메인
+    │   ├── entity/
+    │   ├── repository/
+    │   └── v1/
+    │
+    └── request/                     # 요청 도메인
+        ├── entity/
+        ├── repository/
+        └── v1/
 ```
 
 ### 3.4 이벤트 기반 도메인 통신
@@ -231,6 +279,8 @@ public class LessonEventHandler {
 | LessonCreatedEvent | Lesson | Student (Attendance) | 수업 생성 시 출석 레코드 생성 |
 | AbsenceApprovedEvent | Request | Lesson | 결석 승인 시 출석 상태 변경 |
 | ExchangeApprovedEvent | Request | Lesson/Subject | 교환 승인 시 담당자 변경 |
+| JoinDepartmentEvent | Department | Auth | 부서 참여 시 역할 자동 부여 |
+| LeaveDepartmentEvent | Department | Auth | 부서 탈퇴 시 역할 자동 제거 |
 
 ---
 
@@ -238,29 +288,79 @@ public class LessonEventHandler {
 
 ### 4.1 인증 방식
 
-- **세션 기반 인증** (Spring Security 기본)
-- OAuth2 소셜 로그인 지원 (Google)
+- **JWT 기반 인증** (Spring Security `SessionCreationPolicy.STATELESS`)
+- **Access Token + Refresh Token** 구조
+  - Access Token: 짧은 만료 시간 (기본 1시간), API 요청 시 사용
+  - Refresh Token: 긴 만료 시간 (기본 14일), Access Token 재발급용
+- `CustomUserDetails`를 통해 `userId`, `username`, `authorities` 제공
+- Refresh Token Rotation 적용 (재발급 시 기존 토큰 무효화)
 
-### 4.2 권한 체계
+### 4.2 역할 기반 권한 체계
+
+**RoleType Enum**을 통한 역할 관리:
 
 ```java
-public enum Role {
-    VOLUNTEER,  // 봉사자
-    ADMIN       // 관리자
+public enum RoleType {
+    // 기본 역할 (level 0)
+    ADMIN(1L),           // 관리자 - 시스템 전체 관리
+    MANAGER(2L),         // 매니저 - 중간 관리자
+    VOLUNTEER(3L),       // 봉사자 - 수업 진행
+    GUEST(4L),           // 게스트 - 제한적 접근
+
+    // 부서 역할 (level 1-999)
+    DEPT_FINANCE(1001L),   // 재정 부서
+    DEPT_ACADEMIC(1002L),  // 학사 부서
+    DEPT_IT(1003L),        // IT 부서
+    DEPT_SUPPORT(1004L),   // 지원 부서
+
+    // 교육 역할 (level 1000+)
+    TEACHER(2001L);        // 교사
+
+    public String getAuthority() {
+        // level % 1000 == 0 → "ROLE_" prefix 추가
+        // level % 1000 != 0 → prefix 없음
+        if (this.level == 0) return "ROLE_" + this.name();
+        return this.name();
+    }
 }
 ```
+
+**특징:**
+- 한 사용자는 여러 역할을 동시에 가질 수 있음 (N:M 관계)
+- 역할별 권한은 Spring Security의 `hasRole()`, `hasAuthority()`로 검증
+- 기본 역할은 `ROLE_` prefix, 부서/교육 역할은 prefix 없음
+- 부서 참여/탈퇴 시 해당 부서의 역할이 자동으로 부여/제거됨 (이벤트 기반)
 
 ### 4.3 권한 검증
 
 ```java
+// ADMIN 역할만 접근 가능
 @PreAuthorize("hasRole('ADMIN')")
-@GetMapping("/admin/users")
+@GetMapping("/api/v1/users")
 public List<UserResponse> getAllUsers() { ... }
 
+// VOLUNTEER 또는 ADMIN 역할 접근 가능
 @PreAuthorize("hasRole('VOLUNTEER') or hasRole('ADMIN')")
-@GetMapping("/lessons/my")
+@GetMapping("/api/v1/lessons/my")
 public List<LessonResponse> getMyLessons() { ... }
+
+// 재정 부서 역할 필요
+@PreAuthorize("hasAuthority('DEPT_FINANCE')")
+@GetMapping("/api/v1/finance/reports")
+public FinanceReport getReport() { ... }
+
+// 복합 권한 (ADMIN이거나 TEACHER 역할)
+@PreAuthorize("hasRole('ADMIN') or hasAuthority('TEACHER')")
+@PostMapping("/api/v1/lessons/{id}/reviews")
+public LessonReview createReview() { ... }
 ```
+
+### 4.4 Refresh Token 관리
+
+- Repository 기반 저장 (PostgreSQL/H2)
+- 사용자당 하나의 Refresh Token만 유지 (새 토큰 발급 시 기존 토큰 삭제)
+- 만료된 토큰 자동 정리 기능 제공
+- 로그아웃 시 해당 사용자의 Refresh Token 무효화
 
 ---
 
@@ -337,21 +437,30 @@ public abstract class BaseEntity {
 |------|------|------|
 | Unit | Service, Entity | JUnit 5, Mockito |
 | Integration | Repository, Controller | @SpringBootTest, @DataJpaTest |
-| API | 전체 API | MockMvc, RestAssured |
+| E2E | 전체 API 흐름 | RestAssured |
 
 ### 7.2 테스트 패키지 구조
 
 ```
-src/test/java/org/geumjeong/learning/
-├── domain/
-│   ├── user/
-│   │   ├── service/UserServiceTest.java
-│   │   └── controller/UserControllerTest.java
-│   └── lesson/
-│       └── ...
-└── integration/
-    └── LessonIntegrationTest.java
+src/test/java/sonmoeum/
+├── e2e/
+│   ├── BaseE2ETest.java
+│   ├── util/
+│   │   ├── TestUserHelper.java
+│   │   ├── TestClassroomHelper.java
+│   │   ├── TestDepartmentHelper.java
+│   │   └── TestLessonHelper.java
+│   └── {domain}/
+│       ├── {Domain}BaseTest.java
+│       ├── {Domain}CreateTest.java
+│       ├── {Domain}ReadTest.java
+│       └── {Domain}StatusTest.java
+└── domain/
+    ├── user/
+    └── lesson/
 ```
+
+> E2E 테스트 작성 가이드 → [05_backend/e2e-testing-pipeline.md](./05_backend/e2e-testing-pipeline.md)
 
 ---
 
@@ -380,7 +489,7 @@ GOOGLE_CLIENT_SECRET=xxx
 
 ## 9. 개발 컨벤션
 
-> 상세 컨벤션은 [convention 폴더](./07_convention/)를 참조하세요.
+> 상세 컨벤션은 [07_convention 폴더](./07_convention/)를 참조하세요.
 
 - [커밋/브랜치/코드 스타일](./07_convention/convention.md)
 - [PR 템플릿](./07_convention/pr_template.md)

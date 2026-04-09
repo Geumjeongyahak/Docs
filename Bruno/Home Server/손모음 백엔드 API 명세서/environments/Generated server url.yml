@@ -1,0 +1,8 @@
+name: Generated server url
+variables:
+  - name: baseUrl
+    value: https://test.leeswallow.click
+  - secret: true
+    name: accessToken
+  - secret: true
+    name: refreshToken

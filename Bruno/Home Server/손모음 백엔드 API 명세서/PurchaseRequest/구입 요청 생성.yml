@@ -1,0 +1,66 @@
+info:
+  name: 구입 요청 생성
+  type: http
+  seq: 2
+  tags:
+    - PurchaseRequest
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/v1/purchase-requests"
+  body:
+    type: json
+    data: |-
+      {
+        "subjectId": 1,
+        "title": "교재 구입",
+        "content": "수업에 필요한 교재를 구입합니다.",
+        "price": 15000
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: 200 Response
+    description: OK
+    request:
+      url: "{{baseUrl}}/api/v1/purchase-requests"
+      method: POST
+      body:
+        type: json
+        data: |-
+          {
+            "subjectId": 1,
+            "title": "교재 구입",
+            "content": "수업에 필요한 교재를 구입합니다.",
+            "price": 15000
+          }
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: Content-Type
+          value: "*/*"
+      body:
+        type: text
+        data: |-
+          {
+            "id": 1,
+            "subjectId": 1,
+            "subjectName": "한글 기초",
+            "requestedById": 3,
+            "requestedByName": "홍길동",
+            "title": "",
+            "content": "",
+            "price": 15000,
+            "status": "PENDING",
+            "approvalAt": "",
+            "approvalByName": "",
+            "note": "",
+            "createdAt": ""
+          }

@@ -1,0 +1,76 @@
+info:
+  name: 로그인
+  type: http
+  seq: 5
+  tags:
+    - Auth
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/v1/auth/login"
+  body:
+    type: json
+    data: |-
+      {
+        "username": "user1324",
+        "password": "password123!"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: before-request
+      code: |-
+        const accessToken = bru.getEnvVar("accessToken");
+        if (accessToken) {
+          req.setHeader("Authorization", `Bearer ${accessToken}`);
+        }
+    - type: after-response
+      code: |-
+        if (res.getStatus() >= 200 && res.getStatus() < 300) {
+          const data = res.getBody();
+
+          if (data?.accessToken) {
+            bru.setEnvVar("accessToken", data.accessToken);
+          }
+
+          if (data?.refreshToken) {
+            bru.setEnvVar("refreshToken", data.refreshToken);
+          }
+        }
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: 200 Response
+    description: OK
+    request:
+      url: "{{baseUrl}}/api/v1/auth/login"
+      method: POST
+      body:
+        type: json
+        data: |-
+          {
+            "username": "johndoe1234",
+            "password": "P@ssw0rd!"
+          }
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: Content-Type
+          value: "*/*"
+      body:
+        type: text
+        data: |-
+          {
+            "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+            "refreshToken": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "tokenType": "Bearer",
+            "accessTokenExpiresAt": "2026-02-10T15:30:00",
+            "refreshTokenExpiresAt": "2026-02-24T14:30:00"
+          }

@@ -1,0 +1,73 @@
+info:
+  name: 학생 출석 처리
+  type: http
+  seq: 10
+  tags:
+    - Lesson
+
+http:
+  method: PATCH
+  url: "{{baseUrl}}/api/v1/lessons/:lessonId/student-attendances"
+  params:
+    - name: lessonId
+      value: ""
+      type: path
+  body:
+    type: json
+    data: |-
+      {
+        "attendances": [
+          {
+            "studentId": 1,
+            "status": "PRESENT",
+            "memo": "지각 예정"
+          }
+        ]
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: 200 Response
+    description: OK
+    request:
+      url: "{{baseUrl}}/api/v1/lessons/:lessonId/student-attendances"
+      method: PATCH
+      params:
+        - name: lessonId
+          value: ""
+          type: path
+      body:
+        type: json
+        data: |-
+          {
+            "attendances": [
+              {
+                "studentId": 1,
+                "status": "PRESENT",
+                "memo": "지각 예정"
+              }
+            ]
+          }
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: Content-Type
+          value: "*/*"
+      body:
+        type: text
+        data: |-
+          [
+            {
+              "studentId": 1,
+              "studentName": "이영희",
+              "status": "ABSENT",
+              "memo": "지각 예정"
+            }
+          ]

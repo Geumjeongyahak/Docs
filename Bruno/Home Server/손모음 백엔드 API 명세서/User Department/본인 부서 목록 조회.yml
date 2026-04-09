@@ -1,0 +1,42 @@
+info:
+  name: 본인 부서 목록 조회
+  type: http
+  seq: 3
+  tags:
+    - User Department
+
+http:
+  method: GET
+  url: "{{baseUrl}}/api/v1/users/me/departments"
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+examples:
+  - name: 200 Response
+    description: OK
+    request:
+      url: "{{baseUrl}}/api/v1/users/me/departments"
+      method: GET
+    response:
+      status: 200
+      statusText: OK
+      headers:
+        - name: Content-Type
+          value: "*/*"
+      body:
+        type: text
+        data: |-
+          {
+            "departments": [
+              {
+                "id": 1,
+                "name": "개발팀",
+                "description": "소프트웨어 개발을 담당하는 팀"
+              }
+            ]
+          }

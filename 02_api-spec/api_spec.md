@@ -352,6 +352,153 @@ sequenceDiagram
 
 ---
 
+### 3.8 채널 관리 (Channel)
+
+채널은 게시글의 컨테이너 역할을 합니다. `channelType`으로 소속 범위(전체/분반/부서/커스텀)를,
+`writerPolicy`로 작성 가능 사용자 범위를 결정합니다.
+
+#### 채널 생성
+
+```mermaid
+sequenceDiagram
+    actor Admin as 관리자/매니저
+    participant API as Channel API
+    participant ChannelSvc as ChannelCrudService
+    participant RefResolver as ChannelRefIdResolver
+    participant DB as Database
+
+    Admin->>API: POST /api/v1/channels
+    Note right of Admin: { name, slug, channelType, writerPolicy, ... }
+
+    API->>ChannelSvc: createChannel(request)
+    ChannelSvc->>ChannelSvc: slug 중복 확인
+    ChannelSvc->>RefResolver: validateRefId(channelType, refId)
+
+    alt channelType = CLASSROOM
+        RefResolver->>DB: 분반 존재 확인
+    else channelType = DEPARTMENT
+        RefResolver->>DB: 부서 존재 확인
+    else channelType = ALL or CUSTOM
+        RefResolver->>RefResolver: 검증 생략 또는 customRefId 확인
+    end
+
+    RefResolver-->>ChannelSvc: 검증 완료
+    ChannelSvc->>DB: Channel 저장
+    DB-->>ChannelSvc: 저장 완료
+    ChannelSvc-->>API: ChannelResponse 반환
+    API-->>Admin: 201 Created
+```
+
+---
+
+### 3.9 게시글 관리 (Post)
+
+게시글은 채널 하위에 속하며, 채널의 `writerPolicy`에 따라 작성 권한이 달라집니다.
+상세 조회 시 조회수가 1 증가하고, 생성/수정/삭제 시 채널의 `lastPostedAt`이 갱신됩니다.
+
+#### 게시글 생성
+
+```mermaid
+sequenceDiagram
+    actor User as 인증된 사용자
+    participant API as Post API
+    participant PostSvc as PostCrudService
+    participant PermSvc as PostPermissionService
+    participant Event as EventPublisher
+    participant ChannelHandler as PostEventHandler
+    participant DB as Database
+
+    User->>API: POST /api/v1/channels/{channelId}/posts
+    Note right of User: { title, contentHtml, postType, ... }
+
+    API->>PostSvc: createPost(channelId, userId, isAdminOrManager, request)
+    PostSvc->>DB: Channel 조회 (활성, 미삭제)
+    DB-->>PostSvc: Channel 정보
+
+    PostSvc->>PermSvc: validateCreatePermission(userId, isAdminOrManager, channel)
+
+    alt writerPolicy = ALL_AUTHENTICATED
+        PermSvc->>PermSvc: 허용
+    else writerPolicy = ADMIN_MANAGER_ONLY
+        PermSvc->>PermSvc: 관리자/매니저 여부 확인
+    else writerPolicy = CLASSROOM_MANAGER_TEACHER_ONLY
+        PermSvc->>DB: 해당 분반 교사 여부 확인
+    else writerPolicy = DEPARTMENT_MEMBER_OR_ADMIN
+        PermSvc->>DB: 해당 부서 멤버 여부 확인
+    end
+
+    PermSvc-->>PostSvc: 권한 검증 완료
+    PostSvc->>DB: Post 저장
+    DB-->>PostSvc: 저장 완료
+    PostSvc->>Event: publish(PostChangedEvent)
+    Event->>ChannelHandler: handlePostChanged()
+    ChannelHandler->>DB: Channel.lastPostedAt 갱신
+    PostSvc-->>API: PostDetailResponse 반환
+    API-->>User: 201 Created
+```
+
+#### 게시글 상세 조회 (조회수 증가)
+
+```mermaid
+sequenceDiagram
+    actor User as 인증된 사용자
+    participant API as Post API
+    participant PostSvc as PostCrudService
+    participant DB as Database
+
+    User->>API: GET /api/v1/channels/{channelId}/posts/{postId}
+
+    API->>PostSvc: getPost(channelId, postId)
+    PostSvc->>DB: Post 조회 (channelId + postId 일치, 미삭제)
+    DB-->>PostSvc: Post 정보
+
+    PostSvc->>DB: viewCount + 1 업데이트
+    DB-->>PostSvc: 업데이트 완료
+    PostSvc-->>API: PostDetailResponse 반환
+    API-->>User: 200 OK
+```
+
+---
+
+### 3.10 댓글 관리 (Comment)
+
+댓글은 게시글 하위에 속하며, 게시글의 `allowComment`가 true일 때만 작성 가능합니다.
+`parentCommentId`를 통해 답글(대댓글) 구조를 지원합니다.
+
+#### 댓글 생성
+
+```mermaid
+sequenceDiagram
+    actor User as 인증된 사용자
+    participant API as Comment API
+    participant CommentSvc as CommentCrudService
+    participant DB as Database
+
+    User->>API: POST /api/v1/channels/{channelId}/posts/{postId}/comments
+    Note right of User: { content, parentCommentId? }
+
+    API->>CommentSvc: createComment(channelId, postId, userId, request)
+    CommentSvc->>DB: Post 조회 (channelId 일치, 미삭제)
+    DB-->>CommentSvc: Post 정보
+
+    CommentSvc->>CommentSvc: allowComment 여부 확인
+    alt allowComment = false
+        CommentSvc-->>API: 댓글 비허용 오류
+        API-->>User: 400 Bad Request
+    else allowComment = true
+        alt parentCommentId 있음
+            CommentSvc->>DB: 부모 댓글 조회 및 검증
+            DB-->>CommentSvc: 부모 댓글 정보
+        end
+        CommentSvc->>DB: Comment 저장
+        DB-->>CommentSvc: 저장 완료
+        CommentSvc-->>API: CommentResponse 반환
+        API-->>User: 201 Created
+    end
+```
+
+---
+
 ## 4. API 엔드포인트 요약
 
 > 상세 스펙은 Swagger UI (`/swagger-ui.html`) 참조
@@ -403,3 +550,39 @@ sequenceDiagram
 | CRUD | `/api/v1/subject-exchange-requests/**` | 과목 교환 요청 |
 | CRUD | `/api/v1/purchase-requests/**` | 기자재 구입 요청 |
 | POST | `/api/v1/purchase-requests/{id}/receipts` | 영수증 업로드 |
+
+### 4.6 채널
+
+> 권한: `ADMIN`, `MANAGER`만 생성/수정/삭제 가능. 조회는 인증된 모든 사용자 허용.
+
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| POST | `/api/v1/channels` | 채널 생성 |
+| GET | `/api/v1/channels` | 채널 목록 조회 |
+| GET | `/api/v1/channels/{id}` | 채널 단건 조회 |
+| PUT | `/api/v1/channels/{id}` | 채널 수정 |
+| PATCH | `/api/v1/channels/{id}/hide` | 채널 숨김 (isActive=false) |
+| PATCH | `/api/v1/channels/{id}/show` | 채널 표시 (isActive=true) |
+| DELETE | `/api/v1/channels/{id}` | 채널 소프트 삭제 |
+
+### 4.7 게시글
+
+> 채널 내 게시글 CRUD: `/api/v1/channels/{channelId}/posts/**`
+> 통합 게시글 조회: `/api/v1/posts`
+
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| POST | `/api/v1/channels/{channelId}/posts` | 게시글 생성 |
+| GET | `/api/v1/channels/{channelId}/posts` | 채널 내 게시글 목록 조회 (페이지네이션) |
+| GET | `/api/v1/channels/{channelId}/posts/{postId}` | 게시글 상세 조회 (조회수 증가) |
+| PUT | `/api/v1/channels/{channelId}/posts/{postId}` | 게시글 수정 |
+| DELETE | `/api/v1/channels/{channelId}/posts/{postId}` | 게시글 소프트 삭제 |
+| GET | `/api/v1/posts` | 통합 게시글 목록 조회 (채널 횡단) |
+
+### 4.8 댓글
+
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| POST | `/api/v1/channels/{channelId}/posts/{postId}/comments` | 댓글 생성 |
+| GET | `/api/v1/channels/{channelId}/posts/{postId}/comments` | 댓글 목록 조회 |
+| DELETE | `/api/v1/channels/{channelId}/posts/{postId}/comments/{commentId}` | 댓글 소프트 삭제 |

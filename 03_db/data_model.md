@@ -41,6 +41,11 @@
 | Users | 각종 요청들 | requested_by | 요청자 |
 | Users | 각종 요청들 | approval_by | 승인자 |
 | Students | Student Attendances | student_id | 학생별 출석 기록 |
+| Channels | Posts | channel_id | 채널별 게시글 |
+| Users | Posts | author_id | 게시글 작성자 |
+| Posts | Comments | post_id | 게시글별 댓글 |
+| Comments | Comments | parent_comment_id | 댓글 답글 (셀프 참조) |
+| Users | Comments | author_id | 댓글 작성자 |
 
 #### N:M 관계
 
@@ -83,6 +88,13 @@ erDiagram
     subjects ||--o{ subject_exchange_requests : "has"
     subjects ||--o{ purchase_requests : "has"
     purchase_requests ||--o{ purchase_receipts : "has"
+
+    %% 채널/게시글/댓글
+    channels ||--o{ posts : "contains"
+    users ||--o{ posts : "authors"
+    posts ||--o{ comments : "has"
+    comments ||--o{ comments : "replies to"
+    users ||--o{ comments : "authors"
 
     %% 엔티티 정의
     users {
@@ -204,6 +216,45 @@ erDiagram
         bigint id PK
         bigint purchase_request_id FK
         varchar image_url
+    }
+
+    channels {
+        bigint id PK
+        varchar name
+        varchar slug UK
+        text description
+        varchar channel_type
+        bigint ref_id
+        varchar writer_policy
+        boolean is_default
+        boolean is_active
+        boolean is_deleted
+        int sort_order
+        timestamp last_posted_at
+    }
+
+    posts {
+        bigint id PK
+        bigint channel_id FK
+        bigint author_id FK
+        varchar title
+        text content_html
+        varchar post_type
+        varchar status
+        boolean is_pinned
+        boolean allow_comment
+        bigint view_count
+        boolean is_deleted
+    }
+
+    comments {
+        bigint id PK
+        bigint post_id FK
+        bigint author_id FK
+        bigint parent_comment_id FK
+        text content
+        varchar status
+        boolean is_deleted
     }
 ```
 
@@ -478,3 +529,98 @@ erDiagram
 | image_url | VARCHAR(255) | NOT NULL | 영수증 이미지 URL |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 생성일시 |
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
+
+---
+
+### 3.18 채널 (channels)
+
+게시글이 소속되는 컨테이너 엔티티입니다. `channelType`으로 소속 범위를 구분하고,
+`writerPolicy`로 해당 채널에 글을 쓸 수 있는 사용자 범위를 제어합니다.
+관리자/매니저만 생성·수정·삭제할 수 있습니다.
+
+**ChannelType 값:**
+- `ALL` — 기관 전체 채널 (공지사항 등)
+- `CLASSROOM` — 특정 분반 전용 채널 (`ref_id` = 분반 ID)
+- `DEPARTMENT` — 특정 부서 전용 채널 (`ref_id` = 부서 ID)
+- `CUSTOM` — 외부 연동용 사용자 정의 채널 (`ref_id` = 커스텀 참조 ID)
+
+**ChannelWriterPolicy 값:**
+- `ALL_AUTHENTICATED` — 인증된 모든 사용자
+- `ADMIN_MANAGER_ONLY` — 관리자/매니저만
+- `CLASSROOM_MANAGER_TEACHER_ONLY` — 해당 분반의 교사(봉사자)만
+- `DEPARTMENT_MEMBER_OR_ADMIN` — 해당 부서 멤버 또는 관리자
+
+| 필드명 | 데이터 타입 | 제약조건 | 설명 |
+|--------|-------------|----------|------|
+| id | BIGINT | PRIMARY KEY, AUTO_INCREMENT | 채널 고유 ID |
+| name | VARCHAR(100) | NOT NULL | 사용자에게 노출되는 채널 이름 |
+| slug | VARCHAR(100) | UNIQUE (미삭제 기준), NOT NULL | 프론트 라우팅·운영 식별용 슬러그 |
+| description | TEXT | NULL | 채널 운영 목적 설명 |
+| channel_type | VARCHAR(20) | NOT NULL | 채널 유형 (ALL/CLASSROOM/DEPARTMENT/CUSTOM) |
+| ref_id | BIGINT | NULL | channelType에 따른 참조 ID (분반/부서/커스텀) |
+| writer_policy | VARCHAR(50) | NOT NULL | 게시글 작성 권한 정책 |
+| is_default | BOOLEAN | NOT NULL, DEFAULT false | 기본 채널 여부 |
+| is_active | BOOLEAN | NOT NULL, DEFAULT true | 활성 여부 (false = 숨김) |
+| is_deleted | BOOLEAN | NOT NULL, DEFAULT false | 소프트 삭제 여부 |
+| sort_order | INT | NOT NULL, DEFAULT 0 | 채널 목록 노출 순서 (오름차순) |
+| last_posted_at | TIMESTAMP | NULL | 마지막 게시글 등록/삭제 후 재계산 시각 |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 생성일시 |
+| updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
+
+---
+
+### 3.19 게시글 (posts)
+
+채널 하위에 작성되는 게시글 엔티티입니다. HTML 본문을 저장하며, 조회수·고정·댓글 허용 여부를
+관리합니다. 소프트 삭제 방식을 사용합니다.
+
+**PostType 값:** `NOTICE` (공지), `GENERAL` (일반), `EVENT` (행사)
+
+**PostStatus 값:** `DRAFT` (임시저장), `PUBLISHED` (게시), `ARCHIVED` (보관)
+
+| 필드명 | 데이터 타입 | 제약조건 | 설명 |
+|--------|-------------|----------|------|
+| id | BIGINT | PRIMARY KEY, AUTO_INCREMENT | 게시글 고유 ID |
+| channel_id | BIGINT | FOREIGN KEY, NOT NULL | 소속 채널 ID |
+| author_id | BIGINT | FOREIGN KEY, NOT NULL | 작성자 사용자 ID |
+| title | VARCHAR(255) | NOT NULL | 게시글 제목 |
+| content_html | TEXT | NOT NULL | 게시글 본문 (HTML) |
+| post_type | VARCHAR(20) | NOT NULL | 게시글 유형 (NOTICE/GENERAL/EVENT) |
+| status | VARCHAR(20) | NOT NULL, DEFAULT 'PUBLISHED' | 게시 상태 |
+| is_pinned | BOOLEAN | NOT NULL, DEFAULT false | 상단 고정 여부 |
+| allow_comment | BOOLEAN | NOT NULL, DEFAULT false | 댓글 허용 여부 |
+| view_count | BIGINT | NOT NULL, DEFAULT 0 | 누적 조회수 (상세 조회 시 +1) |
+| is_deleted | BOOLEAN | NOT NULL, DEFAULT false | 소프트 삭제 여부 |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 생성일시 |
+| updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
+
+**동작 특이사항:**
+- 게시글 생성·수정·삭제 시 `PostChangedEvent`를 발행하여 채널의 `last_posted_at`을 갱신합니다.
+- 목록 조회 시 `is_pinned=true` 게시글이 먼저 정렬되고, 그다음 최신순입니다.
+- 작성자 본인 또는 관리자/매니저만 수정·삭제할 수 있습니다.
+
+---
+
+### 3.20 댓글 (comments)
+
+게시글 하위에 작성되는 댓글 엔티티입니다. `parent_comment_id`를 통해 답글(대댓글) 구조를
+지원합니다. 게시글의 `allow_comment=true`인 경우에만 생성 가능합니다.
+
+**CommentStatus 값:** `ACTIVE` (활성), `HIDDEN` (숨김)
+
+| 필드명 | 데이터 타입 | 제약조건 | 설명 |
+|--------|-------------|----------|------|
+| id | BIGINT | PRIMARY KEY, AUTO_INCREMENT | 댓글 고유 ID |
+| post_id | BIGINT | FOREIGN KEY, NOT NULL | 소속 게시글 ID |
+| author_id | BIGINT | FOREIGN KEY, NOT NULL | 댓글 작성자 사용자 ID |
+| parent_comment_id | BIGINT | FOREIGN KEY, NULL | 부모 댓글 ID (null이면 최상위 댓글) |
+| content | TEXT | NOT NULL | 댓글 본문 |
+| status | VARCHAR(20) | NOT NULL, DEFAULT 'ACTIVE' | 댓글 상태 |
+| is_deleted | BOOLEAN | NOT NULL, DEFAULT false | 소프트 삭제 여부 |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 생성일시 |
+| updated_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE | 수정일시 |
+
+**동작 특이사항:**
+- `parent_comment_id`가 없으면 일반 댓글, 있으면 해당 댓글의 답글입니다.
+- 클라이언트에서 `parentCommentId` 유무로 일반 댓글과 답글을 구분하여 스레드 UI를 구성합니다.
+- 작성자 본인 또는 관리자/매니저만 삭제할 수 있습니다.
